@@ -4,13 +4,12 @@ import json
 import csv
 import argparse
 from typing import Dict, Sequence, IO
-from collections import Counter
 
 import emoji
 
 
 def read_tweets(
-    source: IO, languages: Sequence[str], language_id="lang", tweet_id="text"
+    source: IO, languages: Sequence[str], language_id: str, tweet_id: str
 ) -> Dict[str, Sequence[str]]:
     """
     Read tweets from an IO stream. The stream is required to contain a single JSON-serialized object per line.
@@ -35,14 +34,16 @@ def read_tweets(
     return tweets
 
 
-def extract_emojis(tweets_by_language: Dict[str, Sequence[str]]) -> Dict[str, Counter]:
+def extract_emojis(
+    tweets_by_language: Dict[str, Sequence[str]]
+) -> Dict[str, Sequence[Sequence[str]]]:
     """
     Extract all the emoji from a dict of languages and their related tweets.
     :param tweets_by_language: A dictionary mapping languages to all the available text content of tweets.
     :return: A dictionary mapping languages to the used emojis.
     """
 
-    emojis = {language: Counter() for language in tweets_by_language.keys()}
+    emojis = {language: None for language in tweets_by_language.keys()}
 
     # Find the minimal available amount of tweets
     num_tweets = min((len(tweets) for tweets in tweets_by_language.values()))
@@ -53,52 +54,42 @@ def extract_emojis(tweets_by_language: Dict[str, Sequence[str]]) -> Dict[str, Co
             tweets = random.sample(tweets, num_tweets)
 
         # Extract all the emoji and convert their unicode representation to ASCII text.
-        for tweet in tweets:
-            emojis[language].update(
-                emoji.demojize(c).strip(":") for c in tweet if c in emoji.UNICODE_EMOJI
-            )
+        emojis[language] = [
+            [emoji.demojize(c).strip(":") for c in tweet if c in emoji.UNICODE_EMOJI]
+            for tweet in tweets
+        ]
 
     return emojis
 
 
-def export_tweets(output: IO, emojis: Dict[str, Counter]) -> None:
+def export_tweets(output: IO, emojis: Dict[str, Sequence[Sequence[str]]]) -> None:
     """
     Write the results of the extraction process as CSV into an IO stream.
     :param output: The output IO stream.
     :param emojis: A dictionary mapping languages to the used emojis.
     """
 
-    EMOJI_COLUMN = "EMOJI"
-
-    # Get a collection of all existing emoji
-    emoji_names = frozenset(
-        emoji_name
-        for emoji_collection in emojis.values()
-        for emoji_name in emoji_collection.keys()
-    )
-
-    languages = list(emojis.keys())
-
     # Create the columns all uppercase as proposed by Gries.
-    columns = [EMOJI_COLUMN] + [language.upper() for language in languages]
+    COLUMNS = ["TWEET", "EMOJI", "LANGUAGE"]
 
     # Create a CSV writer and write the column row
-    writer = csv.DictWriter(output, fieldnames=columns, delimiter="\t")
+    writer = csv.DictWriter(output, fieldnames=COLUMNS, delimiter="\t")
     writer.writeheader()
 
-    # For all existing emojis in all available languages ...
-    for emoji_name in emoji_names:
-        # ... create a CSV row ...
-        counts = {EMOJI_COLUMN: emoji_name}
-        counts.update(
-            {
-                language.upper(): emojis[language].get(emoji_name, 0)
-                for language in languages
-            }
-        )
+    # Iterate trough all the languages and their tweets
+    tweet_id = 0
+    for language, parsed_tweets in emojis.items():
+        for parsed_tweet in parsed_tweets:
+            # Write each emoji to the output and count them
+            emoji_id = 0
+            for emoji_id, parsed_emoji in enumerate(parsed_tweet):
+                writer.writerow(
+                    {"TWEET": tweet_id, "EMOJI": parsed_emoji, "LANGUAGE": language}
+                )
 
-        # ... and write it.
-        writer.writerow(counts)
+            # Skip tweets without emoji
+            if emoji_id > 0:
+                tweet_id += 1
 
 
 class FileType:
@@ -159,7 +150,12 @@ if __name__ == "__main__":
     random.seed(arguments.seed)
 
     # Extract all tweet contents by language
-    tweets_by_language = read_tweets(arguments.input, arguments.languages)
+    tweets_by_language = read_tweets(
+        arguments.input,
+        languages=arguments.languages,
+        tweet_id=arguments.tweet_key,
+        language_id=arguments.language_key,
+    )
 
     # Extract the emojis
     emojis = extract_emojis(tweets_by_language)
