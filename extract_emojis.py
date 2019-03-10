@@ -46,7 +46,11 @@ def extract_emojis(
     for language, tweets in tweets_by_language.items():
         # Extract all the emoji and convert their unicode representation to ASCII text.
         emojis[language] = [
-            [emoji.demojize(c).strip(":") for c in tweet if c in emoji.UNICODE_EMOJI]
+            [
+                emoji.demojize(c).strip(":").replace("_", " ")
+                for c in tweet
+                if c in emoji.UNICODE_EMOJI
+            ]
             for tweet in tweets
         ]
 
