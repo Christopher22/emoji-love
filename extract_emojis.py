@@ -1,5 +1,4 @@
 import sys
-import random
 import json
 import csv
 import argparse
@@ -44,15 +43,7 @@ def extract_emojis(
     """
 
     emojis = {language: None for language in tweets_by_language.keys()}
-
-    # Find the minimal available amount of tweets
-    num_tweets = min((len(tweets) for tweets in tweets_by_language.values()))
-
     for language, tweets in tweets_by_language.items():
-        # If a language contains more tweets than another subsample its tweets.
-        if len(tweets) > num_tweets:
-            tweets = random.sample(tweets, num_tweets)
-
         # Extract all the emoji and convert their unicode representation to ASCII text.
         emojis[language] = [
             [emoji.demojize(c).strip(":") for c in tweet if c in emoji.UNICODE_EMOJI]
@@ -77,19 +68,19 @@ def export_tweets(output: IO, emojis: Dict[str, Sequence[Sequence[str]]]) -> Non
     writer.writeheader()
 
     # Iterate trough all the languages and their tweets
-    tweet_id = 0
+    tweet_id = -1
     for language, parsed_tweets in emojis.items():
-        for parsed_tweet in parsed_tweets:
+        for tweet_id, parsed_tweet in enumerate(parsed_tweets, start=tweet_id + 1):
             # Write each emoji to the output and count them
-            emoji_id = 0
-            for emoji_id, parsed_emoji in enumerate(parsed_tweet):
+            if len(parsed_tweet) == 0:
                 writer.writerow(
-                    {"TWEET": tweet_id, "EMOJI": parsed_emoji, "LANGUAGE": language}
+                    {"TWEET": tweet_id, "EMOJI": None, "LANGUAGE": language}
                 )
-
-            # Skip tweets without emoji
-            if emoji_id > 0:
-                tweet_id += 1
+            else:
+                for emoji_id, parsed_emoji in enumerate(parsed_tweet):
+                    writer.writerow(
+                        {"TWEET": tweet_id, "EMOJI": parsed_emoji, "LANGUAGE": language}
+                    )
 
 
 class FileType:
@@ -137,17 +128,8 @@ if __name__ == "__main__":
         default="text",
         help="The text attribute of JSON tweet object",
     )
-    parser.add_argument(
-        "-seed",
-        type=int,
-        default=42,
-        help="The random seed for extracting emojis reproducable.",
-    )
 
     arguments = parser.parse_args()
-
-    # Set the random seed to make the process reproducable
-    random.seed(arguments.seed)
 
     # Extract all tweet contents by language
     tweets_by_language = read_tweets(
